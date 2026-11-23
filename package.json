@@ -1,6 +1,6 @@
 {
   "name": "dsh-completion-notifier",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Shows a desktop notification when a conversation finishes a turn, and opens that conversation when you click it",
   "license": "MIT",
