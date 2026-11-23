@@ -81,12 +81,34 @@ window.__ModuleLoader__.load({
         }
 
         /**
+         * Reduce Markdown to the plain text a banner can show.
+         * @param text - raw assistant text.
+         * @returns text without fences, markers, links, or HTML tags.
+         */
+        const plainText = (text) => {
+          let out = text.replace(/```[^\n]*\n?/g, '')
+          out = out.replace(/`([^`\n]+)`/g, '$1')
+          out = out.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+          out = out.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+          out = out.replace(/<[^>]+>/g, '')
+          out = out.replace(/^\s{0,3}#{1,6}\s+/gm, '')
+          out = out.replace(/^\s{0,3}>\s?/gm, '')
+          out = out.replace(/^\s{0,3}[-*+]\s+/gm, '')
+          out = out.replace(/^\s*([-*_])(?:\s*\1){2,}\s*$/gm, '')
+          out = out.replace(/\*\*([^*]+)\*\*/g, '$1')
+          out = out.replace(/__([^_]+)__/g, '$1')
+          out = out.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1$2')
+          out = out.replace(/(^|[^_])_([^_\n]+)_(?!_)/g, '$1$2')
+          return out
+        }
+
+        /**
          * Fold a reply into one banner-sized line.
          * @param text - raw assistant text.
-         * @returns single-line text with an ellipsis when it is too long.
+         * @returns single-line plain text with an ellipsis when it is too long.
          */
         const condense = (text) => {
-          const line = text.replace(/\s+/g, ' ').trim()
+          const line = plainText(text).replace(/\s+/g, ' ').trim()
           if (line.length <= REPLY_MAX_CHARS) return line
           return `${line.slice(0, REPLY_MAX_CHARS - 1).trimEnd()}…`
         }

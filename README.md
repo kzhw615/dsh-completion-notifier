@@ -21,7 +21,8 @@ Client module; no build step, no dependencies, no network access.
   This plugin watches the exact `running: true → false` edge and raises the
   browser's own `Notification` for that conversation.
 - The banner title is the application name, **DeepSeek Harness**; the body is
-  the assistant's reply for that turn. The Host half keeps the latest reply per
+  the assistant's reply for that turn, reduced to one plain-text line (code
+  fences, backticks, emphasis markers, and link targets are removed). The Host half keeps the latest reply per
   Session, because a background conversation has no history in the page, and
   the Client reads it through the package's private route. When the same edge
   waits for your input, the body asks for that confirmation instead.

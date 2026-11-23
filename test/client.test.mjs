@@ -222,6 +222,21 @@ test('folds a long reply into one bounded banner line', async () => {
   assert.ok(!body.includes('\n'))
 })
 
+test('shows plain text without Markdown markers', async () => {
+  const reply = '**完成**：`npm test` 通过，详见 [PR](https://example.com/pr)。\n\n```js\nconst a = 1\n```'
+  const { shown, setStatus, rows } = await load({ reply })
+  rows.a = { displayTitle: 'A', retainedBy: {} }
+
+  setStatus('a', true)
+  setStatus('a', false)
+  await flush()
+
+  assert.equal(shown.length, 1)
+  assert.equal(shown[0].settings.body, '完成：npm test 通过，详见 PR。 const a = 1')
+  assert.ok(!shown[0].settings.body.includes('`'))
+  assert.ok(!shown[0].settings.body.includes('http'))
+})
+
 test('does not notify twice inside the cooldown window', async () => {
   const { shown, setStatus, rows } = await load({ now: 5_000 })
   rows.a = { displayTitle: 'A', retainedBy: {} }
