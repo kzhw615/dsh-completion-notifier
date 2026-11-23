@@ -3,12 +3,11 @@
  *
  * Uses the Session UI status the page already maintains (`uiSession`): when a
  * conversation goes from running to stopped, this module raises one desktop
- * notification unless you are already reading that conversation. Clicking the
- * notification focuses the page and opens the conversation.
+ * notification unless you are already reading that conversation. The banner
+ * names the application and carries the assistant's reply, which the Host half
+ * keeps because a background conversation has no history in this page.
  *
- * Nothing is sent anywhere: the notification is the browser's own API, so it
- * appears as the Harness application, works while the window is in the
- * background, and disappears with the page.
+ * Clicking the notification focuses the page and opens the conversation.
  */
 
 window.__ModuleLoader__.load({
@@ -18,17 +17,19 @@ window.__ModuleLoader__.load({
     const NS = 'completionNotifier'
     /** Do not repeat a notification for the same conversation inside this window. */
     const COOLDOWN_MS = 4000
+    /** Banner title: the application, not the conversation. */
+    const APP_TITLE = 'DeepSeek Harness'
+    /** Longest reply line the banner carries before an ellipsis. */
+    const REPLY_MAX_CHARS = 160
 
     const EN = {
       'body.completed': 'Turn complete. Click to open this conversation.',
       'body.attention': 'Waiting for your input. Click to open this conversation.',
-      'title.fallback': 'Conversation',
     }
 
     const ZH = {
       'body.completed': '本轮已完成，点击打开这个会话。',
       'body.attention': '有操作等待你确认，点击打开这个会话。',
-      'title.fallback': '会话',
     }
 
     return {
@@ -59,15 +60,53 @@ window.__ModuleLoader__.load({
           }
         }, 'completion-notifier: permission request')
 
+        /**
+         * Read the assistant's latest reply for a conversation.
+         * @param sessionId - conversation that just finished.
+         * @returns the reply text, or an empty string when the Host cannot answer.
+         */
+        const readReply = async (sessionId) => {
+          try {
+            const response = await fetch(`completion-notifier/reply?session=${encodeURIComponent(sessionId)}`, {
+              headers: { accept: 'application/json' },
+              cache: 'no-store',
+            })
+            if (!response.ok) return ''
+            const payload = await response.json()
+            const text = payload?.ok === true ? payload.value?.text : ''
+            return typeof text === 'string' ? text : ''
+          } catch {
+            return ''
+          }
+        }
+
+        /**
+         * Fold a reply into one banner-sized line.
+         * @param text - raw assistant text.
+         * @returns single-line text with an ellipsis when it is too long.
+         */
+        const condense = (text) => {
+          const line = text.replace(/\s+/g, ' ').trim()
+          if (line.length <= REPLY_MAX_CHARS) return line
+          return `${line.slice(0, REPLY_MAX_CHARS - 1).trimEnd()}…`
+        }
+
         /** Last notification time per conversation, so one edge cannot double-fire. */
         const notifiedAt = new Map()
+
+        /** Whether this conversation is the focused main view right now. */
+        const isBeingRead = (sessionId) => {
+          if (!document.hasFocus()) return false
+          const row = ctx.sessions.list.getSnapshot().byId[sessionId]
+          return (row?.retainedBy?.mainView ?? 0) > 0
+        }
 
         /**
          * Raise one notification for a conversation that just stopped.
          * @param sessionId - conversation that finished.
          * @param status - the status row supplied by the completion edge.
          */
-        const announce = (sessionId, status) => {
+        const announce = async (sessionId, status) => {
           const now = Date.now()
           if (now - (notifiedAt.get(sessionId) ?? 0) < COOLDOWN_MS) return
 
@@ -77,16 +116,18 @@ window.__ModuleLoader__.load({
           if (row.origin === 'subagent') return
           if (Notification.permission !== 'granted') return
           // Do not interrupt someone who is already reading this conversation.
-          if (document.hasFocus() && (row.retainedBy?.mainView ?? 0) > 0) return
+          if (isBeingRead(sessionId)) return
 
           notifiedAt.set(sessionId, now)
-          const body = say(status.pendingInteraction === undefined ? 'body.completed' : 'body.attention')
+          const attention = status.pendingInteraction !== undefined
+          const reply = attention ? '' : condense(await readReply(sessionId))
+          // Someone may have opened the conversation while the text loaded.
+          if (isBeingRead(sessionId)) return
+
+          const body = attention ? say('body.attention') : reply || say('body.completed')
           let notice
           try {
-            notice = new Notification(row.displayTitle || say('title.fallback'), {
-              body,
-              tag: `dsh-completion-${sessionId}`,
-            })
+            notice = new Notification(APP_TITLE, { body, tag: `dsh-completion-${sessionId}` })
           } catch {
             notifiedAt.delete(sessionId)
             return
@@ -113,7 +154,7 @@ window.__ModuleLoader__.load({
             const next = statuses.getSnapshot()
             for (const [sessionId, status] of next) {
               if (previousRunning.get(sessionId) === true && status.running === false) {
-                announce(sessionId, status)
+                void announce(sessionId, status)
               }
             }
             const settled = new Map()

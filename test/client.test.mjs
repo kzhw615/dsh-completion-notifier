@@ -2,10 +2,10 @@
  * Completion notifier — browser-half behavior test.
  *
  * Runs the real client module against a fake page: a fake `Notification`
- * class, a fake `document`, and the two Client services it reads. Covers the
- * exact running → stopped edge, the focused-conversation skip, child-agent
- * filtering, the confirmation wording, the per-conversation cooldown, and the
- * click action.
+ * class, a fake `document`, a fake reply route, and the Client services it
+ * reads. Covers the exact running → stopped edge, the focused-conversation
+ * skip, child-agent filtering, the confirmation wording, the reply body, the
+ * per-conversation cooldown, and the click action.
  */
 
 import test from 'node:test'
@@ -13,19 +13,28 @@ import assert from 'node:assert/strict'
 
 const SOURCE = new URL('../client.js', import.meta.url)
 
+/** Let the async reply lookup settle before asserting. */
+const flush = () => new Promise(resolve => setTimeout(resolve, 0))
+
 /**
  * Load a fresh instance of the client module with fake browser globals.
- * @param options - permission state, focus state, and the clock.
- * @returns the module, its context, and the recorded notifications.
+ * @param options - permission, focus, clock, and the reply route behavior.
+ * @returns the context, status controls, and recorded notifications.
  */
-function load(options = {}) {
-  const { permission = 'granted', focused = false, now = 1_000 } = options
+async function load(options = {}) {
+  const {
+    permission = 'granted',
+    focused = false,
+    now = 1_000,
+    reply = '已经改好了，测试全部通过。',
+    replyFails = false,
+  } = options
   /** Notifications the page was asked to show. */
   const shown = []
-  /** Clicks performed on a notification. */
-  let focusedCalls = 0
+  /** Reply lookups the page performed. */
+  const lookups = []
   /** Conversations opened from a notification. */
-  const opened = []
+  let focusedCalls = 0
   /** Module registered by the loader. */
   let registered
 
@@ -71,7 +80,7 @@ function load(options = {}) {
     },
     uiWorkspace: {
       openSession: (id) => {
-        opened.push(id)
+        lookups.push(`open:${id}`)
       },
     },
   }
@@ -95,32 +104,45 @@ function load(options = {}) {
   }
   globalThis.document = { hasFocus: () => focused }
   globalThis.Notification = FakeNotification
+  globalThis.fetch = async (url) => {
+    lookups.push(String(url))
+    if (replyFails) return { ok: false, status: 503, json: async () => ({}) }
+    return { ok: true, status: 200, json: async () => ({ ok: true, value: { text: reply } }) }
+  }
   const realNow = Date.now
   Date.now = () => now
 
-  return import(`${SOURCE.href}?case=${Math.random()}`).then(() => {
-    const module = registered.factory()
-    module.apply(ctx)
-    Date.now = realNow
-    return { module, shown, setStatus, rows, opened, focused: () => focusedCalls }
-  })
+  await import(`${SOURCE.href}?case=${Math.random()}`)
+  const module = registered.factory()
+  module.apply(ctx)
+  Date.now = realNow
+
+  return {
+    shown,
+    lookups,
+    rows,
+    setStatus,
+    opened: () => lookups.filter(entry => entry.startsWith('open:')),
+    focused: () => focusedCalls,
+  }
 }
 
-test('notifies once on the true → false edge and opens on click', async () => {
+test('notifies once with the app title and the reply body, and opens on click', async () => {
   const { shown, setStatus, rows, opened, focused } = await load()
-  rows.a = { displayTitle: '重构持久化层', retainedBy: { mainView: 1 }, origin: undefined }
+  rows.a = { displayTitle: '重构持久化层', retainedBy: { mainView: 1 } }
 
   setStatus('a', true)
   setStatus('a', false)
+  await flush()
 
   assert.equal(shown.length, 1)
-  assert.equal(shown[0].title, '重构持久化层')
-  assert.equal(shown[0].settings.body, 'body.completed')
+  assert.equal(shown[0].title, 'DeepSeek Harness')
+  assert.equal(shown[0].settings.body, '已经改好了，测试全部通过。')
   assert.equal(shown[0].settings.tag, 'dsh-completion-a')
 
   shown[0].onclick()
   assert.equal(focused(), 1)
-  assert.deepEqual(opened, ['a'])
+  assert.deepEqual(opened(), ['open:a'])
   assert.equal(shown[0].closed, true)
 })
 
@@ -130,6 +152,7 @@ test('stays quiet while the conversation is the focused main view', async () => 
 
   setStatus('a', true)
   setStatus('a', false)
+  await flush()
 
   assert.equal(shown.length, 0)
 })
@@ -140,6 +163,7 @@ test('notifies for a background conversation even with the window focused', asyn
 
   setStatus('b', true)
   setStatus('b', false)
+  await flush()
 
   assert.equal(shown.length, 1)
 })
@@ -152,19 +176,50 @@ test('skips child agent sessions and rows the page does not know', async () => {
   setStatus('child', false)
   setStatus('missing', true)
   setStatus('missing', false)
+  await flush()
 
   assert.equal(shown.length, 0)
 })
 
-test('reports a pending confirmation instead of completion', async () => {
-  const { shown, setStatus, rows } = await load()
+test('reports a pending confirmation without reading the reply', async () => {
+  const { shown, setStatus, rows, lookups } = await load()
   rows.a = { displayTitle: 'A', retainedBy: {} }
 
   setStatus('a', true)
   setStatus('a', false, { key: 'approval-1', kind: 'approval' })
+  await flush()
 
   assert.equal(shown.length, 1)
   assert.equal(shown[0].settings.body, 'body.attention')
+  assert.equal(lookups.length, 0)
+})
+
+test('falls back to the completion text when the reply route fails', async () => {
+  const { shown, setStatus, rows } = await load({ replyFails: true })
+  rows.a = { displayTitle: 'A', retainedBy: {} }
+
+  setStatus('a', true)
+  setStatus('a', false)
+  await flush()
+
+  assert.equal(shown.length, 1)
+  assert.equal(shown[0].settings.body, 'body.completed')
+})
+
+test('folds a long reply into one bounded banner line', async () => {
+  const long = `第一行内容\n\n${'很长的回复'.repeat(60)}`
+  const { shown, setStatus, rows } = await load({ reply: long })
+  rows.a = { displayTitle: 'A', retainedBy: {} }
+
+  setStatus('a', true)
+  setStatus('a', false)
+  await flush()
+
+  assert.equal(shown.length, 1)
+  const body = shown[0].settings.body
+  assert.equal(body.length, 160)
+  assert.ok(body.endsWith('…'))
+  assert.ok(!body.includes('\n'))
 })
 
 test('does not notify twice inside the cooldown window', async () => {
@@ -175,6 +230,7 @@ test('does not notify twice inside the cooldown window', async () => {
   setStatus('a', false)
   setStatus('a', true)
   setStatus('a', false)
+  await flush()
 
   assert.equal(shown.length, 1)
 })
@@ -185,6 +241,7 @@ test('never asks the page to notify without permission', async () => {
 
   setStatus('a', true)
   setStatus('a', false)
+  await flush()
 
   assert.equal(shown.length, 0)
 })

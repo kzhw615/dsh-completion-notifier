@@ -20,9 +20,11 @@ Client module; no build step, no dependencies, no network access.
 - The page already tracks every conversation's running state (`uiSession`).
   This plugin watches the exact `running: true → false` edge and raises the
   browser's own `Notification` for that conversation.
-- The notification title is the conversation's display title; the body says the
-  turn completed, or that something waits for your input when the same edge
-  carries a pending confirmation.
+- The banner title is the application name, **DeepSeek Harness**; the body is
+  the assistant's reply for that turn. The Host half keeps the latest reply per
+  Session, because a background conversation has no history in the page, and
+  the Client reads it through the package's private route. When the same edge
+  waits for your input, the body asks for that confirmation instead.
 - Clicking the notification focuses the Harness page and opens that
   conversation.
 - Nothing interrupts you while you read: a conversation that is the current
