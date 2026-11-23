@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Completion notifier",
+    "description": "Shows a desktop notification when a conversation finishes a turn, and opens that conversation when you click the notification."
+  }
+}

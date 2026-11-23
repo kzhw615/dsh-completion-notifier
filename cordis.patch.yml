@@ -1,0 +1,8 @@
+# Completion notifier: one Host row carrying the Web Client half. The Client
+# half watches the Session UI status the page already maintains and raises a
+# desktop notification when a conversation stops running while you are looking
+# somewhere else. The Host half intentionally registers nothing.
+- insert:
+    - id: completion-notifier
+      name: 'dsh-completion-notifier'
+      config: {}

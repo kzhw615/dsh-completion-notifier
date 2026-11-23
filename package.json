@@ -1,0 +1,62 @@
+{
+  "name": "dsh-completion-notifier",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shows a desktop notification when a conversation finishes a turn, and opens that conversation when you click it",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kzhw615/dsh-completion-notifier.git"
+  },
+  "homepage": "https://github.com/kzhw615/dsh-completion-notifier#readme",
+  "bugs": {
+    "url": "https://github.com/kzhw615/dsh-completion-notifier/issues"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "notifications",
+    "desktop-notification"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "README.md",
+    "README.zh.md",
+    "LICENSE",
+    "icon.svg",
+    "test"
+  ],
+  "engines": {
+    "dsh": ">=0.2.2-rc.2"
+  },
+  "scripts": {
+    "test": "node --test test/client.test.mjs",
+    "check": "node --check index.js && node --check client.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-ui-workspace"
+      ]
+    }
+  }
+}

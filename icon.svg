@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="36" height="36" role="img" aria-label="Completion notification">
+  <g fill="#247bbf">
+    <circle cx="18" cy="13" r="7.2"/>
+    <path d="M10.8 12h14.4v4.7l2.7 6.1H8.1l2.7-6.1Z"/>
+    <rect x="6.6" y="22.4" width="22.8" height="3.6" rx="1.8"/>
+  </g>
+  <path fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M14.7 18.9l2.3 2.3 4.4-4.6"/>
+  <path fill="none" stroke="#247bbf" stroke-width="2.3" stroke-linecap="round" d="M15.7 27a2.4 2.4 0 0 0 4.6 0"/>
+</svg>
