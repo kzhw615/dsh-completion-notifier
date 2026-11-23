@@ -2,9 +2,10 @@
  * Completion notifier — Host-half test.
  *
  * Loads the real Host module with a fake Cordis context: it dispatches
- * committed assistant messages into the reply cache and then calls the private
- * browser route the way the page does, checking the text, the auth rejection,
- * and the method guard.
+ * committed `assistant/message` events (the same `{ type, seq, time, data }`
+ * envelope the Session log uses) into the reply cache and then calls the
+ * private browser route the way the page does, checking the text, the auth
+ * rejection, and the method guard.
  */
 
 import test from 'node:test'
@@ -13,7 +14,7 @@ import { apply } from '../index.js'
 
 /**
  * Build a fake Host context and the captured route.
- * @returns the captured handlers, the route, and admission rejection control.
+ * @returns the captured handlers and admission rejection control.
  */
 function mount() {
   const handlers = {}
@@ -63,44 +64,46 @@ function response() {
   }
 }
 
+/** One committed assistant event, in the envelope the Session log emits. */
+function assistantEvent(blocks, seq) {
+  return {
+    type: 'assistant/message',
+    seq,
+    time: 0,
+    data: { turn: 1, step: 1, message: { content: blocks }, stream: [] },
+  }
+}
+
+/** Read the reply route for a Session. */
+function readReply(state, sessionId = SESSION) {
+  const res = response()
+  state.route.handler({ method: 'GET', url: `/completion-notifier/reply?session=${sessionId}` }, res)
+  return { code: res.out.code, body: res.out.body, value: () => JSON.parse(res.out.body).value }
+}
+
 const SESSION = 'session-1'
 
 test('caches the latest assistant text and answers the private route', () => {
   const { handlers, state } = mount()
 
-  handlers['session/event']({ id: SESSION }, {
-    type: 'assistant/message',
-    message: {
-      content: [
-        { type: 'text', text: '重构完成。' },
-        { type: 'tool-call', name: 'bash' },
-        { type: 'text', text: '测试全绿。' },
-      ],
-    },
-  })
+  handlers['session/event']({ id: SESSION }, assistantEvent([
+    { type: 'text', text: '重构完成。' },
+    { type: 'tool-call', name: 'bash' },
+    { type: 'text', text: '测试全绿。' },
+  ], 1))
 
-  const res = response()
-  state.route.handler({ method: 'GET', url: `/completion-notifier/reply?session=${SESSION}` }, res)
-
-  assert.equal(res.out.code, 200)
-  assert.deepEqual(JSON.parse(res.out.body), { ok: true, value: { text: '重构完成。\n测试全绿。' } })
+  const reply = readReply(state)
+  assert.equal(reply.code, 200)
+  assert.deepEqual(JSON.parse(reply.body), { ok: true, value: { text: '重构完成。\n测试全绿。' } })
 })
 
 test('keeps the previous text when a step carries only tool calls', () => {
   const { handlers, state } = mount()
 
-  handlers['session/event']({ id: SESSION }, {
-    type: 'assistant/message',
-    message: { content: [{ type: 'text', text: '先回答你。' }] },
-  })
-  handlers['session/event']({ id: SESSION }, {
-    type: 'assistant/message',
-    message: { content: [{ type: 'tool-call', name: 'bash' }] },
-  })
+  handlers['session/event']({ id: SESSION }, assistantEvent([{ type: 'text', text: '先回答你。' }], 1))
+  handlers['session/event']({ id: SESSION }, assistantEvent([{ type: 'tool-call', name: 'bash' }], 2))
 
-  const res = response()
-  state.route.handler({ method: 'GET', url: `/completion-notifier/reply?session=${SESSION}` }, res)
-  assert.equal(JSON.parse(res.out.body).value.text, '先回答你。')
+  assert.equal(readReply(state).value().text, '先回答你。')
 })
 
 test('rejects a request the browser credential does not admit', () => {
@@ -129,13 +132,8 @@ test('rejects another method and an unknown endpoint', () => {
 test('forgets a Session when it is disposed', () => {
   const { handlers, state } = mount()
 
-  handlers['session/event']({ id: SESSION }, {
-    type: 'assistant/message',
-    message: { content: [{ type: 'text', text: '临时内容。' }] },
-  })
+  handlers['session/event']({ id: SESSION }, assistantEvent([{ type: 'text', text: '临时内容。' }], 1))
   handlers['session/disposed']({ id: SESSION })
 
-  const res = response()
-  state.route.handler({ method: 'GET', url: `/completion-notifier/reply?session=${SESSION}` }, res)
-  assert.equal(JSON.parse(res.out.body).value.text, '')
+  assert.equal(readReply(state).value().text, '')
 })

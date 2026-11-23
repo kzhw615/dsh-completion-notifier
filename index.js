@@ -49,7 +49,8 @@ export function apply(ctx) {
 
   ctx.effect(() => ctx.on('session/event', (session, event) => {
     if (event?.type !== 'assistant/message') return
-    const text = textOf(event.message)
+    // Committed events carry their payload under `data`.
+    const text = textOf(event.data?.message)
     if (text === '') return
     replies.set(session.id, text.slice(0, MAX_TEXT_CHARS))
   }), 'completion-notifier: assistant reply cache')
